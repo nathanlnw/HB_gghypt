@@ -75,6 +75,10 @@ static void keypress(unsigned int key)
 
 				DF_WriteFlashSector(DF_Vehicle_Struct_offset,0,(u8*)&Vechicle_Info,sizeof(Vechicle_Info)); 
 				WatchDog_Feed();
+				DF_WriteFlashSector(DF_VehicleBAK_Struct_offset,0,(u8*)&Vechicle_Info,sizeof(Vechicle_Info)); 
+				WatchDog_Feed();
+				DF_WriteFlashSector(DF_VehicleBAK2_Struct_offset,0,(u8*)&Vechicle_Info,sizeof(Vechicle_Info));
+				WatchDog_Feed();
 				lcd_fill(0);
 				lcd_text12(36, 10,"±£´æ³É¹¦",8,LCD_MODE_SET);
 				lcd_update_all();

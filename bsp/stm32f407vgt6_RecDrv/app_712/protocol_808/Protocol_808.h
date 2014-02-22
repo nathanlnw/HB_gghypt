@@ -25,6 +25,8 @@
 #define  transfer             3 
 
 
+//---------------------------
+#define  Max_PKGRecNum_0704     17   // 0704 单包最大记录数目   58 *16 =986  单包不超过1024  
 
 //------------  GPS function------
 #define  INIT         1
@@ -1062,7 +1064,7 @@ extern u8          IP_change_counter;           //   中心修改IP 计数器
 extern u8		   Down_Elec_Flag;				 //   断油断电使能标志位 
 
 
-extern ALIGN(RT_ALIGN_SIZE) u8          GPRS_info[900]; 
+extern ALIGN(RT_ALIGN_SIZE) u8          GPRS_info[1400]; 
 extern u16         GPRS_infoWr_Tx;
 
 
@@ -1360,7 +1362,8 @@ extern void   CAN_send_timer(void);
 extern void   redial(void);
 extern void   dnsr_main(u8*instr);
 extern void   dnsr_aux(u8*instr);
-extern void   port_main(u8 *instr); 
+extern void   port_main(u32 port); 
+extern void   port_tdt(u32 port);
 extern void   port_aux(u8 *instr); 
 extern void   buzzer_onoff(u8 in); 
 
@@ -1378,6 +1381,7 @@ extern void  plus_num(u32 value);
 extern void  spd_type(int  in); 
 extern void  adjust_ok(int in); 
 extern void  link_mode(u8 *instr);
+extern void  dnsr_set(u8 type,u8* instr);   
 
 
 //extern u8  RecordSerial_output_Str(const char *fmt,...); 

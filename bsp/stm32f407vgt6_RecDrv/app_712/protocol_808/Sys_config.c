@@ -13,7 +13,7 @@
 #include  "Vdr.h"
 
  
-#define   SYSID            0x063B       
+#define   SYSID            0x0661       
                                 /*        
                                                         0x0000   -----   0x00FF  生产和研发用
                                                         0x0100   -----   0x0FFF  产品出货用
@@ -324,7 +324,10 @@ void SysConfig_Read(void)
 	        RemotePort_main=SysConf_struct.Port_main;
 	       //   备用 IP   +  端口
 	        memcpy((u8*)RemoteIP_aux,SysConf_struct.IP_Aux,4); 
-	        RemotePort_aux=SysConf_struct.Port_Aux;	 		
+	        RemotePort_aux=SysConf_struct.Port_Aux;	 	
+
+			
+			RemotePort_tdt=SysConf_struct.Port_tdt;
 		   //  Link2  
 	        memcpy((u8*)Remote_Link2_IP,SysConf_struct.Link2_IP,4); 
 	        Remote_Link2_Port=SysConf_struct.Link2_Port;	 				 
@@ -404,6 +407,7 @@ void  Vehicleinfo_Init(void)
 	Vechicle_Info.Dev_CityID=101;      // 默认市ID   0		 石家庄 
 	Vechicle_Info.Dev_Color=1;       // 默认颜色    // JT415    1  蓝 2 黄 3 黑 4 白 9其他     
 	//Vechicle_Info.loginpassword_flag=0;
+	Vechicle_Info.Vech_MODE_Mark=1; // 默认模式 1 :货运模式     2: 二客一危模式  
 	Vechicle_Info.Link_Frist_Mode=0; //     0  : dnsr first     1: mainlink  first  
 
 	DF_WriteFlashSector(DF_Vehicle_Struct_offset,0,(u8*)&Vechicle_Info,sizeof(Vechicle_Info));  
@@ -1748,7 +1752,7 @@ void DefaultConfig(void)
          rt_kprintf("\r\n        车辆所在省ID: %d \r\n",Vechicle_Info.Dev_ProvinceID);
          rt_kprintf("\r\n        车辆所在市ID: %d \r\n",Vechicle_Info.Dev_CityID); 
          rt_kprintf("\r\n        车辆颜色:   JT415    1  蓝 2 黄 3 黑 4 白 9其他----当前颜色 %d \r\n",Vechicle_Info.Dev_Color);  
-
+         
 
          rt_kprintf("\r\n        触发上报传感器为  TriggerSDsatus=%X    \r\n",TriggerSDsatus);   
          rt_kprintf("\r\n        Max_picNum =  %d   Max_CycleNum = %d   Max_DrvRcdNum=%d \r\n",Max_PicNum,Max_CycleNum,Max_RecoderNum); 
@@ -1800,12 +1804,23 @@ void DefaultConfig(void)
 		 // ----    首次连接类型  --------------------
 		 if(Vechicle_Info.Link_Frist_Mode==1)  
 		 	{
-                 rt_kprintf("\r\n\r\n   首次连接模式:   MainLink");    
+                 rt_kprintf("\r\n\r\n   首次连接方式:   MainLink \r\n");    
 		 	}
 		 else
 		 	{
-                  rt_kprintf("\r\n\r\n   首次连接模式:  DNSR域名");     
+                  rt_kprintf("\r\n\r\n   首次连接方式:  DNSR域名\r\n");     
 		 	}
+         //---------- 连接模式 -------
+         if(Vechicle_Info.Vech_MODE_Mark==1)
+         	    {
+				rt_kprintf("\r\n\r\n	连接模式:	 货运模式\r\n");	
+				}
+			 else
+				{
+					  rt_kprintf("\r\n\r\n	 连接模式:	二客一危(标准模式)\r\n");    	
+			 	}		 	
+     
+		 
 
 		if(DeviceNumberID[0]==0xFF)
 			rt_kprintf("\r\n  =======> 尚未设置设备编号，请重新设置\r\n" );  

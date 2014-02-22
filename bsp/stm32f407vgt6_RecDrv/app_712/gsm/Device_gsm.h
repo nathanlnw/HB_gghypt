@@ -45,7 +45,7 @@ typedef enum DialStage {Dial_DialInit0, Dial_DialInit1, Dial_DialInit2,Dial_Dial
 
  //-----------  GSM_RX  buffer size -------------
 #define GSMRX_SIZE		2500
-#define GSM_AsciiTX_SIZE   2500 
+#define GSM_AsciiTX_SIZE   2800 
 
 
 
@@ -186,7 +186,7 @@ extern u8       TCP2_login;       // TCP 建立好连接后的标志位
 extern  u8  Ring_counter;  // ring   来电话，性能指示
 extern  u8  Calling_ATA_flag; //     接听电话操作  
 extern  u16 Gghypt_Check_Flag;
-extern  u16 Gghypt_Check_counter;
+extern  u32 Gghypt_Check_counter;
 
 
 ALIGN(RT_ALIGN_SIZE)

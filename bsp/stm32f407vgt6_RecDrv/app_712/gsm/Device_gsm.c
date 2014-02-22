@@ -150,10 +150,15 @@ u8	  TCP2_sdFlag=0;		//定时发送GPS位置信息标志
 u16    TCP2_sdDuration=50; 
 u8      TCP2_Coutner=0;  // 定时器计数
 u8      TCP2_login=0;       // TCP 建立好连接后的标志位
-u8       Online_error_counter=0;   // 登网或在线情况下,连续出现错误计数器     
-u16 Gghypt_Check_Flag=0;
-u16 Gghypt_Check_counter=0;
+u8       Online_error_counter=0;   // 登网或在线情况下,连续出现错误计数器  
 
+
+u16 Gghypt_Check_Flag=0;    // 使能定时检测链接状态标志位
+u32 Gghypt_Check_counter=0; // 链接检测定时器，计数变量
+u16 Gghypt_Check_step=0;  // 公共货运平台，连接步骤计数器
+u32 Gghypt_Check_step_Dur=1200;  // 公共货运平台，每个阶段限时数值单位: 秒
+u8  Gghyp_Check_Link_sate=0;// 货运模式下，非公共货运平台域名，申请建立连接时为1，
+                            //  建立连接好后 清除为0，同事使能定时检测公共货运平台链路
 //    TTS   相关
  TTS              TTS_Var;  //  TTS 类型变量
  ALIGN(RT_ALIGN_SIZE)
@@ -170,6 +175,33 @@ VOC_REC       VocREC;    // 录音上传相关
 static void GSM_Process(u8 *instr, u16 len);
 u32 GSM_HextoAscii_Convert(u8*SourceHex,u16 SouceHexlen,u8 *Dest);   
 void Dial_Stage(T_Dial_Stage  Stage);
+
+
+//   gghypt   连接相关检测
+void GGHYPT_linkCheck_enable(u8 type)
+{
+   // type >0    表示从同开始  =0  表示累计使能
+   if(type)
+    {
+      Gghypt_Check_step=0; // from start
+      Gghypt_Check_step_Dur=1200;// 1200s
+   	}
+   
+   Gghypt_Check_Flag=1;
+   Gghypt_Check_counter=0;
+
+}
+
+void GGHYPT_linkCheck_StateClear(void)
+{
+    Gghypt_Check_Flag=0;
+    Gghypt_Check_counter=0;
+    Gghypt_Check_step=0;
+}
+
+
+
+
 
 
 #ifdef  REC_VOICE_ENABLE
@@ -541,21 +573,47 @@ void GSM_CSQ_timeout(void)
 
 void Gghypt_Check_timeout(void)
 {
-if(Gghypt_Check_Flag==1)
+if((Gghypt_Check_Flag==1)&&DataLink_Status())
 	{   /*
 	         check_step  
-	          第一次检测延时   300s    第二次检测延时  1200s
-	          第三次检测3600s                第三次检测28800 
+	          第一次检测延时   1200s    第二次检测延时  2400s
+	          第三次检测3600s                第三次检测28800  
 
 	      */
+       
+			 
           Gghypt_Check_counter++;
-          if(Gghypt_Check_counter>=300)   // 300sec=5min
+          if(Gghypt_Check_counter>=Gghypt_Check_step_Dur)   // 300sec=5min
           {
-              rt_kprintf("\r\n   5 min   断开连接   检测GGHYPT的连接性");
-              
-              Gghypt_Check_counter=0;  
-              Gghypt_Check_Flag=0;  
-			  reset();//复位后重新连接
+              rt_kprintf("\r\n   check_step=%d   断开连接   检测GGHYPT的连接性",Gghypt_Check_step);
+
+			  //  check  with  step
+			  Gghypt_Check_counter=0;  
+			  Gghypt_Check_Flag=0;
+			  switch(Gghypt_Check_step)
+			  	{
+                     case  0: //
+                              Gghypt_Check_step++;
+							  Gghypt_Check_step_Dur=2400;//s
+							  Gghypt_Check_Flag=1;
+							  DataLink_EndFlag=1;
+							  break;
+					 case  1:					 	      
+                              Gghypt_Check_step++;
+							  Gghypt_Check_step_Dur=3600;//s 
+							  Gghypt_Check_Flag=1;
+							  DataLink_EndFlag=1;
+							  break;
+					 case  2:                              
+                              Gghypt_Check_step++;
+							  Gghypt_Check_step_Dur=28800;//s  
+							  Gghypt_Check_Flag=1;
+							  DataLink_EndFlag=1;
+							  break;
+                     case  3:// 结束了						  	
+							  Gghypt_Check_step=0;
+							  reset();//复位后重新连接
+			  	}
 			  //DataLink_EndFlag=1;		 	  
           }	 
 	}
@@ -1373,10 +1431,17 @@ void DataLink_Process(void)
                         
                          //--------    清除鉴权码 -------------------
                          if(Vechicle_Info.Vech_MODE_Mark==1) 
-		                    idip("clear");	
+		                  {  
+		                      idip("clear");	
+							  Gghyp_Check_Link_sate=1;
+                         }
 					     break;
 			      case 3:  // dns3
                          Dial_Stage(Dial_TDT_DNS4);  
+						  if(Vechicle_Info.Vech_MODE_Mark==1)  //  货运模式
+						    {								        
+										Gghyp_Check_Link_sate=1; 
+						  	}
 					     break;
 				  case 4:  // dns4
 					     DataLink_MainSocket_set(RemoteIP_main,RemotePort_tdt,1);                          
@@ -1827,6 +1892,8 @@ static void GSM_Process(u8 *instr, u16 len)
 				Dial_Stage(Dial_TDT_DNS3);	 // 如果是DNSR 连接那么换到mainlink
 				//--------    清除鉴权码 -------------------
 		        idip("clear");	
+				   if(Vechicle_Info.Vech_MODE_Mark==1)  //  货运模式
+						Gghyp_Check_Link_sate=1; 
 				}
 			 if(Dial_jump_State>=7)
 				Dial_jump_State=0;    
@@ -2080,7 +2147,8 @@ static void GSM_Process(u8 *instr, u16 len)
 							{ 								
 							     if(Vechicle_Info.Vech_MODE_Mark==1)  //  货运模式
 								 {
-				                        Gghypt_Check_Flag=1;//定时检测GGHYPT标志
+								        
+										Gghyp_Check_Link_sate=1; 
 				                    	rt_kprintf("\r\n货运模式下连接不上后切换到天地通平台，需要定时检测GGHYPT的连接性\r\n"); 
                                         Dial_Stage(Dial_TDT_DNS3);
 										idip("clear");//需要重新鉴权
@@ -2092,7 +2160,13 @@ static void GSM_Process(u8 *instr, u16 len)
 								
 					        	}
                        case  9:  //tdt  dnsr3
+                                 if(Vechicle_Info.Vech_MODE_Mark==1)  //  货运模式
+								 {								        
+										Gghyp_Check_Link_sate=1; 
+                                 }
+								 
                                   Dial_Stage(Dial_TDT_DNS4); 
+								  
 					             break;
 					   case  10:  // tdt  dnsr4
 	 							   DataLink_MainSocket_set(RemoteIP_main,RemotePort_tdt,1); 						 
@@ -2232,6 +2306,21 @@ RXOVER:
 								             rt_kprintf("\r\n连接成功TCP---\r\n");
 								     if(DataDial.Dial_step ==Dial_AuxLnk)    //auxlink 	 
 								                rt_kprintf("\r\n Aux 连接成功TCP---\r\n");
+
+                                   //     0.  检测是否货运模式下连接本地
+                                  if((Vechicle_Info.Vech_MODE_Mark==1)&&(Gghyp_Check_Link_sate==1))  //  货运模式
+								 {								        
+										Gghyp_Check_Link_sate=0; 
+										if(Gghypt_Check_step==0)
+				                           GGHYPT_linkCheck_enable(1); //Gghypt_Check_Flag=1;//定时检测GGHYPT标志
+                                        else
+										   GGHYPT_linkCheck_enable(0);
+
+										rt_kprintf("\r\n  GGhypt step=%d \r\n",Gghypt_Check_step);
+								  }
+								  else
+								  	   GGHYPT_linkCheck_StateClear(); 
+									 
 								   //     1.   登陆成功后相关操作	 
 								    // <--  注册状态
 								    if(1==JT808Conf_struct.Regsiter_Status)   
@@ -2292,7 +2381,6 @@ RXOVER:
 	}
     //-----------
 }
-
 void  IMSIcode_Get(void)
 {
 

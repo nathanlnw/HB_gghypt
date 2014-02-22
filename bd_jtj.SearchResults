@@ -1,30 +1,7 @@
----- DataLink_EndFlag Matches (29 in 8 files) ----
-App_gsm.c (bsp\stm32f407vgt6_recdrv\app_712\gsm): u8  DataLink_EndFlag=0;         // Close_DataLink
-App_gsm.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):					  	    DataLink_EndFlag=1;
-App_gsm.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):          DataLink_EndFlag=1; 
-App_gsm.h (bsp\stm32f407vgt6_recdrv\app_712\gsm):extern u8  DataLink_EndFlag;         // Close_DataLink
-Device_485.c (bsp\stm32f407vgt6_recdrv\app_712\u4_485):						 DataLink_EndFlag=1; //AT_End();  
-Device_808.c (bsp\stm32f407vgt6_recdrv\app_712\protocol_808):		 DataLink_EndFlag=1; //AT_End();  
-Device_gsm.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):			  //DataLink_EndFlag=1;		 	  
-Device_gsm.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):       if(1==DataLink_EndFlag)          
-Device_gsm.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):		DataLink_EndFlag=0;
-Device_gsm.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):			DataLink_EndFlag=1; 
-Device_gsm.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):	                DataLink_EndFlag=1; //AT_End();    
-Device_gsm.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):					  //DataLink_EndFlag=1; //AT_End();    
-Device_gsm.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):			                DataLink_EndFlag=1; //AT_End();    
-Device_gsm.h (bsp\stm32f407vgt6_recdrv\app_712\gsm):	u8      DataLink_EndFlag;    
-Protocol_808.c (bsp\stm32f407vgt6_recdrv\app_712\protocol_808):					  SD_ACKflag.f_CentreCMDack_0001H=1 ;// 2 DataLink_EndFlag=1; //AT_End(); 先返回结果再挂断  
-Protocol_808.c (bsp\stm32f407vgt6_recdrv\app_712\protocol_808):					   SD_ACKflag.f_CentreCMDack_0001H=1 ;//DataLink_EndFlag=1; //AT_End(); 先返回结果再挂断  
-Protocol_808.c (bsp\stm32f407vgt6_recdrv\app_712\protocol_808):					  SD_ACKflag.f_CentreCMDack_0001H=1 ;//DataLink_EndFlag=1; //AT_End(); 先返回结果再挂断  
-Protocol_808.c (bsp\stm32f407vgt6_recdrv\app_712\protocol_808):					   SD_ACKflag.f_CentreCMDack_0001H=1 ;//DataLink_EndFlag=1; //AT_End(); 先返回结果再挂断	
-Protocol_808.c (bsp\stm32f407vgt6_recdrv\app_712\protocol_808):      DataLink_EndFlag=1; //AT_End();   
-Protocol_808.c (bsp\stm32f407vgt6_recdrv\app_712\protocol_808):			DataLink_EndFlag=1; //AT_End();  
-Protocol_808.c (bsp\stm32f407vgt6_recdrv\app_712\protocol_808):		//	DataLink_EndFlag=1; //AT_End();  
-SMS.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):						     SD_ACKflag.f_CentreCMDack_0001H=2 ;//DataLink_EndFlag=1; //AT_End(); 先返回结果再挂断  
-SMS.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):							   DataLink_EndFlag=1; //AT_End();  
-SMS.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):						     SD_ACKflag.f_CentreCMDack_0001H=2 ;//DataLink_EndFlag=1; //AT_End(); 先返回结果再挂断  
-SMS.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):							  DataLink_EndFlag=1; //AT_End();  
-SMS.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):						      SD_ACKflag.f_CentreCMDack_0001H=2 ;//DataLink_EndFlag=1; //AT_End(); 先返回结果再挂断  
-SMS.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):							   DataLink_EndFlag=1;
-SMS.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):			         DataLink_EndFlag=1; 
-SMS.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):			              DataLink_EndFlag=1; 
+---- SMS_sendFlag Matches (6 in 3 files) ----
+Protocol_808.c (bsp\stm32f407vgt6_recdrv\app_712\protocol_808):    SMS_Service.SMS_sendFlag=1;	
+SMS.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):	if(SMS_Service.SMS_sendFlag==1)
+SMS.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):		SMS_Service.SMS_sendFlag=0;  // clear 
+SMS.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):		 	SMS_Service.SMS_sendFlag=1;
+SMS.c (bsp\stm32f407vgt6_recdrv\app_712\gsm):							SMS_Service.SMS_sendFlag=1;  // 发送返回短息标志位
+SMS.h (bsp\stm32f407vgt6_recdrv\app_712\gsm):	u8  SMS_sendFlag;  //  短息发送标志位

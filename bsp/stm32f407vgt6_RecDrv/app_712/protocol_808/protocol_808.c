@@ -168,7 +168,7 @@ u8 Sdgps_Time[3];  // GPS 发送 时间记录   BCD 方式
 
 //static u8      UDP_AsciiTx[1800];     
  ALIGN(RT_ALIGN_SIZE)
-u8      GPRS_info[900];  
+u8      GPRS_info[1400];   
 u16     GPRS_infoWr_Tx=0; 
 
  ALIGN(RT_ALIGN_SIZE)
@@ -198,7 +198,7 @@ u16     GPS_direction=0;           //   808协议-> 方向   度
 u16     Centre_FloatID=0; //  中心消息流水号
 u16     Centre_CmdID=0;   //  中心命令ID
 
-u8      Original_info[850]; // 没有转义处理前的原始信息  
+u8      Original_info[1400]; // 没有转义处理前的原始信息  
 u16     Original_info_Wr=0; // 原始信息写地址
 //---------- 用GPS校准特征系数相关 ----------------------------
 u8      Speed_area=60; // 校验K值范围
@@ -358,7 +358,7 @@ u32 wmv_fsize=25964;
 u8  wmv_sendstate=0;
 
 //-------------------   公共 ---------------------------------------		
-static u8 GPSsaveBuf[40];     // 存储GPS buffer
+static u8 GPSsaveBuf[128];     // 存储GPS buffer
 static u8	ISP_buffer[1024];
 static u16 GPSsaveBuf_Wr=0;
 
@@ -394,9 +394,7 @@ u16   DebugSpd=0;   //调试用GPS速度
 u8    MMedia2_Flag=0;  // 上传固有音频 和实时视频  的标志位    0 传固有 1 传实时
 
 
-
-
-
+u8	 reg_128[128];  // 0704 寄存器
 
 unsigned short int FileTCB_CRC16=0;
 unsigned short int Last_crc=0,crc_fcs=0; 
@@ -406,7 +404,6 @@ unsigned short int Last_crc=0,crc_fcs=0;
 //---------  中心应答  -----------
 u8		 fCentre_ACK=0; 			  // ---------判断中心应答标志位－－
 u8		 ACK_timer=0;				   //---------	ACK timer 定时器--------------------- 
-u16         ACKFromCenterCounter=0;//十包无应答重新拨号  
 u8           Send_Rdy4ok=0;
 unsigned char	Rstart_time = 0; 
 
@@ -735,11 +732,9 @@ void delay_ms(u16 j )
 								//return false;		
 					  // 2. 			  
 				 	   Stuff_Current_Data_0200H();  // 上报即时数据  				   
-					   //----应答次数 ----		   
-					  // ACKFromCenterCounter++; // 只关注应答报数，不关心应答时间 
 					   //---------------------------------------------------------------------------------
 					   if(DispContent)	
-						    rt_kprintf("\r\n 发送 GPS -current !\r\n");     
+						    rt_kprintf("\r\n 发送 GPS -current !\r\n");       
 					   return true;
 				    }   
 			 }
@@ -747,14 +742,21 @@ void delay_ms(u16 j )
              if((RdCycle_RdytoSD==ReadCycle_status)&&(0==BD_ISP.ISP_running)&&(DataLink_Status())&&(DEV_Login.Operate_enable==2)&&(CameraState.camera_running==0))    // 读取发送--------- 正常GPS 
              {                                       /* 远程下载时不允许上报GPS ，因为有可能发送定位数据时
                                                           正在接收大数据量得下载数据包,导致GSM模块处理不过来，而不是单片机处理不过来,拍照过程中不能进行*/
-                  if (false==Stuff_Normal_Data_0200H())        
-				 	return false;
+
+                  //  1. 判断是否是批量数据上传
+                  
+                  if( Stuff_BatchDataTrans_BD_0704H()==false) 
+                  	{
+		                  // 正常上报 
+						  if (false==Stuff_Normal_Data_0200H())        
+						 	return false;
+                  	}
+				  
 				  fCentre_ACK=1;// 判断应答
 				 //-------- change status  Ready  ACK  ------ 
 			         ReadCycle_status=RdCycle_SdOver;
 				  Send_Rdy4ok=1;  // enable
 				  //----应答次数 ----		  
-				  ACKFromCenterCounter++; 
 				 // if(DispContent)	
 					//  rt_kprintf("\r\n 发送 GPS --saved  OK!\r\n");    
 				 return true; 
@@ -1710,6 +1712,7 @@ void  Save_GPS(void)
 {
    u16 counter_mainguffer,i;
    u8  lati_reg[4];//,regstatus;
+   u32 Dis_01km=0;
    
 		  if (PositionSD_Status())	
 		  {
@@ -1722,10 +1725,16 @@ void  Save_GPS(void)
                               //if(Time_FastJudge()==false)    
 							//return ;		 
 				  //----------------------- Save GPS --------------------------------------
-				  memset(GPSsaveBuf,0,40);   
+				  /*
+				           1  recrod    128  Bytes,   1st   is  the length of  record , last  is  fcs (which is caulated from  length byte to end)
+
+				           每条记录是128个字节的区域。第一个字节是长度，最后一个字节是校验。			           
+
+				  */
+				  memset(GPSsaveBuf,0,128);   
 				  GPSsaveBuf_Wr=0;				  
 				   //------------------------------- Stuff ----------------------------------------
-					counter_mainguffer = GPSsaveBuf_Wr;
+				   GPSsaveBuf_Wr++;  // 第一个字节是长度所以信息从第二个字节开始
 				   // 1. 告警状态   4 Bytes
 				   memcpy( ( char * ) GPSsaveBuf + GPSsaveBuf_Wr, ( char * )Warn_Status,4 );   
 				   GPSsaveBuf_Wr += 4;  
@@ -1756,17 +1765,6 @@ void  Save_GPS(void)
 					GPSsaveBuf[GPSsaveBuf_Wr++]=((Gps_Gprs.Time[1]/10)<<4)+(Gps_Gprs.Time[1]%10);
 					GPSsaveBuf[GPSsaveBuf_Wr++]=((Gps_Gprs.Time[2]/10)<<4)+(Gps_Gprs.Time[2]%10);    
                    //------------------------------------------------------------------ 
-                   //   注:   因为长度有限所以存储时只存储传感器速度，不填写 类型和长度 
-                  //----------- 附加信息  ------------
-				    //  附加信息 1  -----------------------------    
-					//	附加信息 ID
-					//Original_info[Original_info_Wr++]=0x03; // 行驶记录仪的速度
-					//	附加信息长度
-					//Original_info[Original_info_Wr++]=2;
-					//	类型
-					//GPSsaveBuf[GPSsaveBuf_Wr++]=(u8)(Speed_cacu>>8);  
-					//GPSsaveBuf[GPSsaveBuf_Wr++]=(u8)(Speed_cacu);	           
-				   //--------------------------------------------------------------------
 				if(strncmp(( char * )GPSsaveBuf + GPSsaveBuf_Wr-3,(const char*)Sdgps_Time,3)==0)						
 					{
 					/*if(strncmp((const char*)GPSsaveBuf + GPSsaveBuf_Wr-3,(const char*)Sdgps_Time,3)==0)
@@ -1787,15 +1785,112 @@ void  Save_GPS(void)
 					}
 					memcpy(Sdgps_Time,GPSsaveBuf + GPSsaveBuf_Wr-3,3); //更新最新一次存储时间
 
+                   //----------------------- 附加信息----------------------------------------
+					//	附加信息 1	-----------------------------	 
+					//	附加信息 ID
+					GPSsaveBuf[GPSsaveBuf_Wr++]=0x03; // 行驶记录仪的速度
+					//	附加信息长度
+					GPSsaveBuf[GPSsaveBuf_Wr++]=2;
+					//	类型
+					GPSsaveBuf[GPSsaveBuf_Wr++]=(u8)(Speed_cacu>>8); 
+					GPSsaveBuf[GPSsaveBuf_Wr++]=(u8)(Speed_cacu); 	 
+					//rt_kprintf("\r\n GPS速度=%d km/h , 传感器速度=%d km/h\r\n",Speed_gps,Speed_cacu); 
+					 //  附加信息 2  -----------------------------	  
+					 //  附加信息 ID
+					 GPSsaveBuf[GPSsaveBuf_Wr++]=0x01; // 车上的行驶里程
+					 //  附加信息长度
+					 GPSsaveBuf[GPSsaveBuf_Wr++]=4; 
+					 //  类型
+					 Dis_01km=JT808Conf_struct.Distance_m_u32/100;
+					 GPSsaveBuf[GPSsaveBuf_Wr++]=(Dis_01km>>24); 
+					 GPSsaveBuf[GPSsaveBuf_Wr++]=(Dis_01km>>16); 
+					 GPSsaveBuf[GPSsaveBuf_Wr++]=(Dis_01km>>8); 
+					 GPSsaveBuf[GPSsaveBuf_Wr++]=Dis_01km; 
+				   
+				   
+					//	附加信息 3 
+					if(Warn_Status[1]&0x10)
+				   {
+					 //  附加信息 ID
+					 GPSsaveBuf[GPSsaveBuf_Wr++]=0x12; //  进出区域/路线报警
+					 //  附加信息长度 
+					 GPSsaveBuf[GPSsaveBuf_Wr++]=6;
+					 //  类型
+					 GPSsaveBuf[GPSsaveBuf_Wr++]=InOut_Object.TYPE;
+					 GPSsaveBuf[GPSsaveBuf_Wr++]=(InOut_Object.ID>>24);
+					 GPSsaveBuf[GPSsaveBuf_Wr++]=(InOut_Object.ID>>16);
+					 GPSsaveBuf[GPSsaveBuf_Wr++]=(InOut_Object.ID>>8);
+					 GPSsaveBuf[GPSsaveBuf_Wr++]=InOut_Object.ID;
+					 GPSsaveBuf[GPSsaveBuf_Wr++]=InOut_Object.InOutState;  
+					 rt_kprintf("\r\n ----- 0x0200 附加信息 \r\n");    
+				   }
+				   
+					//	附件信息4
+					if(Warn_Status[3]&0x02)
+					{	   
+					  //  附加信息 ID
+					  GPSsaveBuf[GPSsaveBuf_Wr++]=0x11; //  进出区域/路线报警
+					  //  附加信息长度 
+					  GPSsaveBuf[GPSsaveBuf_Wr++]=1; 
+					  //  类型
+					  GPSsaveBuf[GPSsaveBuf_Wr++]=0; //  无特定位置	
+				   
+					}
+				   
+					//---------- 附加信息 5 ----
+					   GPSsaveBuf[GPSsaveBuf_Wr++]=0x25; //扩展车辆信号状态
+					   //  附加信息长度
+					   GPSsaveBuf[GPSsaveBuf_Wr++]=4; 
+					   //  类型
+					   GPSsaveBuf[GPSsaveBuf_Wr++]=0x00;
+						 GPSsaveBuf[GPSsaveBuf_Wr++]=0x00;
+					   GPSsaveBuf[GPSsaveBuf_Wr++]=0x00;
+						 GPSsaveBuf[GPSsaveBuf_Wr++]=BD_EXT.Extent_IO_status; 
+				   
+						 //  附加信息 5  -----------------------------		
+					   //  附加信息 ID
+					   GPSsaveBuf[GPSsaveBuf_Wr++]=0x30; //信号强度
+					   //  附加信息长度
+					   GPSsaveBuf[GPSsaveBuf_Wr++]=1; 
+					   //  类型
+					   GPSsaveBuf[GPSsaveBuf_Wr++]= BD_EXT.FJ_SignalValue; 
+				   
+						  //if(DispContent)
+						   //	  printf("\r\n---- Satelitenum: %d , CSQ:%d\r\n",Satelite_num,ModuleSQ);  
+				   
+						  //  附加信息 6  ----------------------------- 	
+					   //  附加信息 ID
+					   GPSsaveBuf[GPSsaveBuf_Wr++]=0x2A; //自定义io
+					   //  附加信息长度
+					   GPSsaveBuf[GPSsaveBuf_Wr++]=2; 
+					   //  类型
+					   GPSsaveBuf[GPSsaveBuf_Wr++]= 0x00; 
+					   GPSsaveBuf[GPSsaveBuf_Wr++]=0x00; 
+
+					   	  //  附加信息 7 ----------------------------- 	
+					   //  附加信息 ID
+					   GPSsaveBuf[GPSsaveBuf_Wr++]=0x2B; //自定义模拟量上传 AD
+					   //  附加信息长度
+					   GPSsaveBuf[GPSsaveBuf_Wr++]=4; 
+					   GPSsaveBuf[GPSsaveBuf_Wr++]=(BD_EXT.AD_0>>8);	// 模拟量 1
+					   GPSsaveBuf[GPSsaveBuf_Wr++]=BD_EXT.AD_0;
+					   GPSsaveBuf[GPSsaveBuf_Wr++]=(BD_EXT.AD_1>>8);	// 模拟量 2
+					   GPSsaveBuf[GPSsaveBuf_Wr++]=BD_EXT.AD_1;
+                    
+
+					   //------------------------------------------------
+					   GPSsaveBuf[0]=GPSsaveBuf_Wr;  
+
                    //-------------  Caculate  FCS  -----------------------------------
 					FCS_GPS_UDP=0;  
-					for ( i = counter_mainguffer; i < 30; i++ )  
+					for ( i = 0; i < GPSsaveBuf_Wr; i++ )  
 					{
 							FCS_GPS_UDP ^= *( GPSsaveBuf + i ); 
 					}			   //求上边数据的异或和
-					GPSsaveBuf[30] = FCS_GPS_UDP;  	  	
+					GPSsaveBuf[GPSsaveBuf_Wr++] = FCS_GPS_UDP;  	  	
 			     //-------------------------------- Save  ------------------------------------------
-			      if(Api_cycle_write(GPSsaveBuf,31))
+			      //OutPrint_HEX("Write内容",GPSsaveBuf,GPSsaveBuf_Wr); 
+			      if(Api_cycle_write(GPSsaveBuf,GPSsaveBuf_Wr))
 			      { 
 					  if(DispContent) 	
 					       rt_kprintf("\r\n    GPS Save succed\r\n");
@@ -2102,19 +2197,76 @@ u8  Stuff_DevLogin_0102H(void)
 u8  Stuff_Normal_Data_0200H(void)  
 {
   u8 spd_sensorReg[2];
-  u32  Dis_01km=0;
+  u8  rd_infolen=0;
  //  1. Head  
    if(!Protocol_Head(MSG_0x0200,Packet_Normal)) 
  	  return false;  
  // 2. content 
  WatchDog_Feed();
- if(Api_cycle_read(Original_info+Original_info_Wr, 31)==false)            
-   return false;
- Original_info_Wr+=28;   // 内容只有28 
- memcpy(spd_sensorReg,Original_info+Original_info_Wr,2);// 把读取传感器速度 
+ if(Api_cycle_read(Original_info+Original_info_Wr, 128)==false)            
+  {
+     rt_kprintf("\r\n  读取 false\r\n "); 
+    return false;
+  }
+ // 获取信息长度
+ rd_infolen=Original_info[Original_info_Wr];
+ //OutPrint_HEX("read -1",Original_info+Original_info_Wr,rd_infolen+1);
+ memcpy(Original_info+Original_info_Wr,Original_info+Original_info_Wr+1,rd_infolen);
+ //OutPrint_HEX("read -2",Original_info+Original_info_Wr,rd_infolen+1); 
+ Original_info_Wr+=rd_infolen-1;   // 内容长度 剔除第一个长度字节 
+
  
- 
-  //----------- 附加信息  ------------ 
+ //  3. Send 
+ Protocol_End(Packet_Normal ,0);
+   	
+ return true; 
+
+}
+//------------------------------------------------------------------------------------
+u8  Stuff_Current_Data_0200H(void)   //  发送即时数据不存储到存储器中
+{  
+  
+  u32  Dis_01km=0;
+  
+    if( Spd_Using <=( JT808Conf_struct.Speed_warn_MAX*10) )
+		StatusReg_SPD_NORMAL(); 
+
+ //  1. Head	
+ if(!Protocol_Head(MSG_0x0200,Packet_Normal)) 
+ 	  return false; 
+ // 2. content 
+    //------------------------------- Stuff ----------------------------------------
+	// 1. 告警标志  4
+	memcpy( ( char * ) Original_info+ Original_info_Wr, ( char * )Warn_Status,4 );    
+	Original_info_Wr += 4;
+	// 2. 状态  4
+	memcpy( ( char * ) Original_info+ Original_info_Wr, ( char * )Car_Status,4 );   
+	Original_info_Wr += 4;
+	// 3.  纬度
+    memcpy( ( char * ) Original_info+ Original_info_Wr,( char * )  Gps_Gprs.Latitude, 4 );//纬度   modify by nathan
+	Original_info_Wr += 4;
+	// 4.  经度
+	memcpy( ( char * ) Original_info+ Original_info_Wr, ( char * )  Gps_Gprs.Longitude, 4 );	  //经度    东经  Bit 7->0   西经 Bit 7 -> 1
+	Original_info_Wr += 4;
+	// 5.  高程
+	Original_info[Original_info_Wr++]=(u8)(GPS_Hight<<8);
+	Original_info[Original_info_Wr++]=(u8)GPS_Hight;
+	// 6.  速度    0.1 Km/h
+	Original_info[Original_info_Wr++]=(u8)(Speed_gps>>8);//(Spd_Using>>8); 
+	Original_info[Original_info_Wr++]=(u8)(Speed_gps);//Spd_Using;     
+	// 7. 方向   单位 1度
+	Original_info[Original_info_Wr++]=(GPS_direction>>8);  //High 
+	Original_info[Original_info_Wr++]=GPS_direction; // Low
+	// 8.  日期时间	
+	Original_info[Original_info_Wr++]=(((Gps_Gprs.Date[0])/10)<<4)+((Gps_Gprs.Date[0])%10);		
+	Original_info[Original_info_Wr++]=((Gps_Gprs.Date[1]/10)<<4)+(Gps_Gprs.Date[1]%10); 
+	Original_info[Original_info_Wr++]=((Gps_Gprs.Date[2]/10)<<4)+(Gps_Gprs.Date[2]%10);
+	Original_info[Original_info_Wr++]=((Gps_Gprs.Time[0]/10)<<4)+(Gps_Gprs.Time[0]%10);
+	Original_info[Original_info_Wr++]=((Gps_Gprs.Time[1]/10)<<4)+(Gps_Gprs.Time[1]%10);
+	Original_info[Original_info_Wr++]=((Gps_Gprs.Time[2]/10)<<4)+(Gps_Gprs.Time[2]%10);	 
+
+	
+	//----------------------- 附加信息----------------------------------------
   //  附加信息 1  -----------------------------    
   //  附加信息 ID
   Original_info[Original_info_Wr++]=0x03; // 行驶记录仪的速度
@@ -2178,164 +2330,30 @@ u8  Stuff_Normal_Data_0200H(void)
 
 	   //  附加信息 5  -----------------------------	  
 	 //  附加信息 ID
-	 Original_info[Original_info_Wr++]=0xFE; //信号强度
+	 Original_info[Original_info_Wr++]=0x30; //信号强度
 	 //  附加信息长度
-	 Original_info[Original_info_Wr++]=2; 
+	 Original_info[Original_info_Wr++]=1; 
 	 //  类型
 	 Original_info[Original_info_Wr++]= BD_EXT.FJ_SignalValue; 
-	 Original_info[Original_info_Wr++]=0x00;  //  保留 
-
-        //if(DispContent)
-         //     printf("\r\n---- Satelitenum: %d , CSQ:%d\r\n",Satelite_num,ModuleSQ);  
-
-        //  附加信息 6  -----------------------------	  
-	 //  附加信息 ID
-	 Original_info[Original_info_Wr++]=0xFF; //自定义模拟量上传
-	 //  附加信息长度
-	 Original_info[Original_info_Wr++]=6; 
-	 //  类型
-	 Original_info[Original_info_Wr++]= BD_EXT.FJ_IO_1; 
-	 Original_info[Original_info_Wr++]= BD_EXT.FJ_IO_2;  
-	 Original_info[Original_info_Wr++]=(BD_EXT.AD_0>>8);  // 模拟量 1
-	 Original_info[Original_info_Wr++]=BD_EXT.AD_0;
-	 Original_info[Original_info_Wr++]=(BD_EXT.AD_1>>8);  // 模拟量 2
-	 Original_info[Original_info_Wr++]=BD_EXT.AD_1;
-
  
- //  3. Send 
- Protocol_End(Packet_Normal ,0);
-   	
- return true; 
-
-}
-//------------------------------------------------------------------------------------
-u8  Stuff_Current_Data_0200H(void)   //  发送即时数据不存储到存储器中
-{  
-  
-  u32  Dis_01km=0;
-  
-    if( Spd_Using <=( JT808Conf_struct.Speed_warn_MAX*10) )
-		StatusReg_SPD_NORMAL(); 
-
- //  1. Head	
- if(!Protocol_Head(MSG_0x0200,Packet_Normal)) 
- 	  return false; 
- // 2. content 
-    //------------------------------- Stuff ----------------------------------------
-	// 1. 告警标志  4
-	memcpy( ( char * ) Original_info+ Original_info_Wr, ( char * )Warn_Status,4 );    
-	Original_info_Wr += 4;
-	// 2. 状态  4
-	memcpy( ( char * ) Original_info+ Original_info_Wr, ( char * )Car_Status,4 );   
-	Original_info_Wr += 4;
-	// 3.  纬度
-    memcpy( ( char * ) Original_info+ Original_info_Wr,( char * )  Gps_Gprs.Latitude, 4 );//纬度   modify by nathan
-	Original_info_Wr += 4;
-	// 4.  经度
-	memcpy( ( char * ) Original_info+ Original_info_Wr, ( char * )  Gps_Gprs.Longitude, 4 );	  //经度    东经  Bit 7->0   西经 Bit 7 -> 1
-	Original_info_Wr += 4;
-	// 5.  高程
-	Original_info[Original_info_Wr++]=(u8)(GPS_Hight<<8);
-	Original_info[Original_info_Wr++]=(u8)GPS_Hight;
-	// 6.  速度    0.1 Km/h
-	Original_info[Original_info_Wr++]=(u8)(Speed_gps>>8);//(Spd_Using>>8); 
-	Original_info[Original_info_Wr++]=(u8)(Speed_gps);//Spd_Using;     
-	// 7. 方向   单位 1度
-	Original_info[Original_info_Wr++]=(GPS_direction>>8);  //High 
-	Original_info[Original_info_Wr++]=GPS_direction; // Low
-	// 8.  日期时间	
-	Original_info[Original_info_Wr++]=(((Gps_Gprs.Date[0])/10)<<4)+((Gps_Gprs.Date[0])%10);		
-	Original_info[Original_info_Wr++]=((Gps_Gprs.Date[1]/10)<<4)+(Gps_Gprs.Date[1]%10); 
-	Original_info[Original_info_Wr++]=((Gps_Gprs.Date[2]/10)<<4)+(Gps_Gprs.Date[2]%10);
-	Original_info[Original_info_Wr++]=((Gps_Gprs.Time[0]/10)<<4)+(Gps_Gprs.Time[0]%10);
-	Original_info[Original_info_Wr++]=((Gps_Gprs.Time[1]/10)<<4)+(Gps_Gprs.Time[1]%10);
-	Original_info[Original_info_Wr++]=((Gps_Gprs.Time[2]/10)<<4)+(Gps_Gprs.Time[2]%10);	 
-
-	//----------- 附加信息  ------------
-    //  附加信息 1  -----------------------------    
-	//	附加信息 ID
-	Original_info[Original_info_Wr++]=0x03; // 行驶记录仪的速度
-	//	附加信息长度
-	Original_info[Original_info_Wr++]=2;
-	//	类型
-	Original_info[Original_info_Wr++]=(u8)(Speed_cacu>>8); 
-	Original_info[Original_info_Wr++]=(u8)(Speed_cacu);	     
-	//rt_kprintf("\r\n GPS速度=%d km/h , 传感器速度=%d km/h\r\n",Speed_gps,Speed_cacu); 
-     //  附加信息 2  -----------------------------	  
+		//if(DispContent)
+		 // 	printf("\r\n---- Satelitenum: %d , CSQ:%d\r\n",Satelite_num,ModuleSQ);	
+ 
+		//	附加信息 6	-----------------------------	  
 	 //  附加信息 ID
-	 Original_info[Original_info_Wr++]=0x01; // 车上的行驶里程
-	 //  附加信息长度
-	 Original_info[Original_info_Wr++]=4; 
-	 //  类型
-	 Dis_01km=JT808Conf_struct.Distance_m_u32/100;
-	 Original_info[Original_info_Wr++]=(Dis_01km>>24); 
-	 Original_info[Original_info_Wr++]=(Dis_01km>>16); 
-	 Original_info[Original_info_Wr++]=(Dis_01km>>8); 
-	 Original_info[Original_info_Wr++]=Dis_01km; 
-  
-   
-	//  附加信息 3 
-	if(Warn_Status[1]&0x10)
-   {
-     //  附加信息 ID
-     Original_info[Original_info_Wr++]=0x12; //  进出区域/路线报警
-     //  附加信息长度 
-     Original_info[Original_info_Wr++]=6;
-	 //  类型
-	 Original_info[Original_info_Wr++]=InOut_Object.TYPE;
-	 Original_info[Original_info_Wr++]=(InOut_Object.ID>>24);
-	 Original_info[Original_info_Wr++]=(InOut_Object.ID>>16);
-	 Original_info[Original_info_Wr++]=(InOut_Object.ID>>8);
-	 Original_info[Original_info_Wr++]=InOut_Object.ID;
-	 Original_info[Original_info_Wr++]=InOut_Object.InOutState;  
-	 rt_kprintf("\r\n ----- 0x0200 current 附加信息 \r\n");    
-   }
-
-    //  附件信息4
-    if(Warn_Status[3]&0x02)
-    {      
-	  //  附加信息 ID
-	  Original_info[Original_info_Wr++]=0x11; //  进出区域/路线报警
-	  //  附加信息长度 
-	  Original_info[Original_info_Wr++]=1; 
-	  //  类型
-	  Original_info[Original_info_Wr++]=0; //  无特定位置   
-
-    }
-
-rt_kprintf("\r\n ----- 0x0200 current 附加信息 \r\n"); 
-//附加信息7
-	 Original_info[Original_info_Wr++]=0x25; //扩展车辆信号状态
-	 //  附加信息长度
-	 Original_info[Original_info_Wr++]=4; 
-	 //  类型
-	// Original_info[Original_info_Wr++]= BD_EXT.FJ_SignalValue; //小小改动
-	
-	 Original_info[Original_info_Wr++]=0x00;
-       Original_info[Original_info_Wr++]=0x00;
-	 Original_info[Original_info_Wr++]=0x00;
-       Original_info[Original_info_Wr++]=BD_EXT.Extent_IO_status; 
-	   //  附加信息 5  -----------------------------	  
-	 //  附加信息 ID
-	 Original_info[Original_info_Wr++]=0xFE; //信号强度
+	 Original_info[Original_info_Wr++]=0x2A; //自定义io
 	 //  附加信息长度
 	 Original_info[Original_info_Wr++]=2; 
 	 //  类型
-	 Original_info[Original_info_Wr++]= BD_EXT.FJ_SignalValue; 
-	 Original_info[Original_info_Wr++]=0x00;  //  保留 
+	 Original_info[Original_info_Wr++]= 0x00; 
+	 Original_info[Original_info_Wr++]=0x00; 
 
-        //if(DispContent)
-         //     printf("\r\n---- Satelitenum: %d , CSQ:%d\r\n",Satelite_num,ModuleSQ);  
-
-        //  附加信息 6  -----------------------------	  
+		//	附加信息 7 -----------------------------  
 	 //  附加信息 ID
-	 Original_info[Original_info_Wr++]=0xFF; //自定义模拟量上传
+	 Original_info[Original_info_Wr++]=0x2B; //自定义模拟量上传 AD
 	 //  附加信息长度
-	 Original_info[Original_info_Wr++]=6; 
-	 //  类型
-	 Original_info[Original_info_Wr++]= BD_EXT.FJ_IO_1; 
-	 Original_info[Original_info_Wr++]= BD_EXT.FJ_IO_2;  
-	 Original_info[Original_info_Wr++]=(BD_EXT.AD_0>>8);  // 模拟量 1
+	 Original_info[Original_info_Wr++]=4; 
+	 Original_info[Original_info_Wr++]=(BD_EXT.AD_0>>8);	  // 模拟量 1
 	 Original_info[Original_info_Wr++]=BD_EXT.AD_0;
 	 Original_info[Original_info_Wr++]=(BD_EXT.AD_1>>8);  // 模拟量 2
 	 Original_info[Original_info_Wr++]=BD_EXT.AD_1;
@@ -2446,32 +2464,47 @@ u8  Stuff_Current_Data_0201H(void)   //   位置信息查询回应
 
     }
 
-    
-	   //  附加信息 5  -----------------------------	  
-	 //  附加信息 ID
-	 Original_info[Original_info_Wr++]=0xFE; //信号强度
-	 //  附加信息长度
-	 Original_info[Original_info_Wr++]=2; 
-	 //  类型
-	 Original_info[Original_info_Wr++]= BD_EXT.FJ_SignalValue; 
-	 Original_info[Original_info_Wr++]=0x00;  //  保留 
+	  //---------- 附加信息 5 ----
+		 Original_info[Original_info_Wr++]=0x25; //扩展车辆信号状态
+		 //  附加信息长度
+		 Original_info[Original_info_Wr++]=4; 
+		 //  类型
+		 Original_info[Original_info_Wr++]=0x00;
+		   Original_info[Original_info_Wr++]=0x00;
+		 Original_info[Original_info_Wr++]=0x00;
+		   Original_info[Original_info_Wr++]=BD_EXT.Extent_IO_status; 
+	 
+		   //  附加信息 5  -----------------------------	  
+		 //  附加信息 ID
+		 Original_info[Original_info_Wr++]=0x30; //信号强度
+		 //  附加信息长度
+		 Original_info[Original_info_Wr++]=1; 
+		 //  类型
+		 Original_info[Original_info_Wr++]= BD_EXT.FJ_SignalValue; 
+	 
+			//if(DispContent)
+			 // 	printf("\r\n---- Satelitenum: %d , CSQ:%d\r\n",Satelite_num,ModuleSQ);	
+	 
+			//	附加信息 6	-----------------------------	  
+		 //  附加信息 ID
+		 Original_info[Original_info_Wr++]=0x2A; //自定义io
+		 //  附加信息长度
+		 Original_info[Original_info_Wr++]=2; 
+		 //  类型
+		 Original_info[Original_info_Wr++]= 0x00; 
+		 Original_info[Original_info_Wr++]=0x00; 
 
-        //if(DispContent)
-         //     printf("\r\n---- Satelitenum: %d , CSQ:%d\r\n",Satelite_num,ModuleSQ);  
+			//	附加信息 7 -----------------------------  
+		 //  附加信息 ID
+		 Original_info[Original_info_Wr++]=0x2B; //自定义模拟量上传 AD
+		 //  附加信息长度
+		 Original_info[Original_info_Wr++]=4; 
+		 Original_info[Original_info_Wr++]=(BD_EXT.AD_0>>8);	  // 模拟量 1
+		 Original_info[Original_info_Wr++]=BD_EXT.AD_0;
+		 Original_info[Original_info_Wr++]=(BD_EXT.AD_1>>8);	  // 模拟量 2 
+		 Original_info[Original_info_Wr++]=BD_EXT.AD_1;
+	  
 
-        //  附加信息 6  -----------------------------	  
-	 //  附加信息 ID
-	 Original_info[Original_info_Wr++]=0xFF; //自定义模拟量上传
-	 //  附加信息长度
-	 Original_info[Original_info_Wr++]=6; 
-	 //  类型
-	 Original_info[Original_info_Wr++]= BD_EXT.FJ_IO_1; 
-	 Original_info[Original_info_Wr++]= BD_EXT.FJ_IO_2;  
-	 Original_info[Original_info_Wr++]=(BD_EXT.AD_0>>8);  // 模拟量 1
-	 Original_info[Original_info_Wr++]=BD_EXT.AD_0;
-	 Original_info[Original_info_Wr++]=(BD_EXT.AD_1>>8);  // 模拟量 2
-	 Original_info[Original_info_Wr++]=BD_EXT.AD_1;
-	
  //  3. Send 
 Protocol_End(Packet_Normal ,0);
  if(DispContent)
@@ -3478,7 +3511,7 @@ u8 Paramater_0106_stuff(u32 cmdid, u8 *deststr)
 	 default:
 	 	    break;
    	}
-
+    return true;
 }
 
 //-----------------------------------------------------------------------
@@ -5749,48 +5782,86 @@ u8  Stuff_ISP_Resualt_BD_0108H(void)
 }
 u8  Stuff_BatchDataTrans_BD_0704H(void)
 {
+    /*  Note:
+                      读取存储时有可能存在读取校验不正确的可能，
+                      这种情况下rd_error 要记录错误次数
+                      同时填充的记录数也要递减
+      */
+    u8   Rd_error_Counter=0;  // 读取错误计数器
+    u8   StuffNum_last=0;  // 最终填写包序号
+    u8   i=0;
+	u16  len_wr_reg=0;//   长度单位下标 记录 
+	u8   rd_infolen=0;
+   
+    //0 .  congifrm   batch  num
+        if(cycle_read<cycle_write)
+        {
+            delta_0704_rd=cycle_write-cycle_read;
+			// 判断偏差记录条数是否大于最大记录数
+            if(delta_0704_rd>=Max_PKGRecNum_0704)
+				 delta_0704_rd=Max_PKGRecNum_0704;   
+
+        }
+		else   // write 小于 read
+		{
+		    delta_0704_rd=Max_CycleNum-cycle_read; 
+		}
+
+	    //  判断是不是相差为 1, 如果为 1为实时上报
+	    
+        rt_kprintf("\r\n	delat_0704=%d\r\n",delta_0704_rd); 
+	       if(delta_0704_rd==1)
+	       	{
+                delta_0704_rd=0;
+                return  false;
+	       	}  
+		
    // 1. Head
 	if(!Protocol_Head(MSG_0x0704,Packet_Normal)) 
  	     return false; 
 	 // 2. content   
-             // 2.1   数据项个数
-             Original_info[Original_info_Wr++]=1;   
-	       // 2.2   位置数据类型
-             Original_info[Original_info_Wr++]=0;   //  0: 正常上报  1: 盲区补报
-	      // 2.3   位置汇报数据项
-	      	// 1. 告警标志  4
-		memcpy( ( char * ) Original_info+ Original_info_Wr, ( char * )Warn_Status,4 );    
-		Original_info_Wr += 4;
-		// 2. 状态  4
-		memcpy( ( char * ) Original_info+ Original_info_Wr, ( char * )Car_Status,4 );   
-		Original_info_Wr += 4;
-		// 3.  纬度
-	       memcpy( ( char * ) Original_info+ Original_info_Wr,( char * )  Gps_Gprs.Latitude, 4 );//纬度   modify by nathan
-		Original_info_Wr += 4;
-		// 4.  经度
-		memcpy( ( char * ) Original_info+ Original_info_Wr, ( char * )  Gps_Gprs.Longitude, 4 );	  //经度    东经  Bit 7->0   西经 Bit 7 -> 1
-		Original_info_Wr += 4;
-		// 5.  高程
-		Original_info[Original_info_Wr++]=(u8)(GPS_Hight<<8);
-		Original_info[Original_info_Wr++]=(u8)GPS_Hight;
-		// 6.  速度    0.1 Km/h
-		Original_info[Original_info_Wr++]=(u8)(Speed_gps>>8);//(Spd_Using>>8); 
-		Original_info[Original_info_Wr++]=(u8)(Speed_gps);//Spd_Using;     
-		// 7. 方向   单位 1度
-		Original_info[Original_info_Wr++]=(GPS_direction>>8);  //High 
-		Original_info[Original_info_Wr++]=GPS_direction; // Low
-		// 8.  日期时间	
-		Original_info[Original_info_Wr++]=(((Gps_Gprs.Date[0])/10)<<4)+((Gps_Gprs.Date[0])%10);		
-		Original_info[Original_info_Wr++]=((Gps_Gprs.Date[1]/10)<<4)+(Gps_Gprs.Date[1]%10); 
-		Original_info[Original_info_Wr++]=((Gps_Gprs.Date[2]/10)<<4)+(Gps_Gprs.Date[2]%10);
-		Original_info[Original_info_Wr++]=((Gps_Gprs.Time[0]/10)<<4)+(Gps_Gprs.Time[0]%10);
-		Original_info[Original_info_Wr++]=((Gps_Gprs.Time[1]/10)<<4)+(Gps_Gprs.Time[1]%10);
-		Original_info[Original_info_Wr++]=((Gps_Gprs.Time[2]/10)<<4)+(Gps_Gprs.Time[2]%10);	 
+	 //  2.1	数据项个数
+	 Original_info[Original_info_Wr++]	 = 0x00; //  10000=0x2710
+	 len_wr_reg=Original_info_Wr; //记录长度下标
+	 Original_info[Original_info_Wr++]	 = delta_0704_rd;
+	 
+	 //  2.2	数据类型	 1	盲区补报	0:	 正常位置批量汇报
+	 Original_info[Original_info_Wr++] = 1;
+
+     //  2.3  数据项目
+     
+      for(i=0;i<delta_0704_rd;i++)
+      {
+	     //   读取信息
+	    memset(reg_128,0,sizeof(reg_128)); 
+	    if( ReadCycleGPS(cycle_read,reg_128, 128)==false)	  // 实际内容只有28个字节
+	    {  
+	       Rd_error_Counter++;
+           continue; 
+	    } 
+		cycle_read++; 
+	     //----------  子项信息长度 --------------------------			
+	     rd_infolen=reg_128[0];
+		 Original_info[Original_info_Wr++]   = 0;
+		 Original_info[Original_info_Wr++]   = rd_infolen; // 28+ 附件信息长度
+
+		 memcpy(Original_info+Original_info_Wr,reg_128+1,rd_infolen);
+		 Original_info_Wr+=rd_infolen-1;	 // 内容长度 剔除第一个长度字节  
+
+         
+		 //OutPrint_HEX("read -1"reg_128,rd_infolen+1);
+		 
+		 //OutPrint_HEX("read -2",reg_128+1,rd_infolen); 
+ //==================================================    
+	 }
+      // 补填0704 数据项
+      StuffNum_last=delta_0704_rd-Rd_error_Counter;
+	  Original_info[len_wr_reg]=StuffNum_last;   
      
 	 //  3. Send 
 	  Protocol_End(Packet_Normal ,0);
 	  if(DispContent)
-	          rt_kprintf("\r\n	定位数据批量上传\r\n");    
+	          rt_kprintf("\r\n	定位数据批量上传  delta=%d  true=%d 记录\r\n",delta_0704_rd,StuffNum_last);    
    return true;
 }
 
@@ -6065,55 +6136,88 @@ u8  CentreSet_subService_8103H(u32 SubID, u8 infolen, u8 *Content )
   u8    reg_str[80];
   u8    reg_in[20];
   u32   resualtu32=0;
+  u8    IP_reg[4];  
 
   switch(SubID)
    {
-     case 0xF408:
+     case 0xF404:  // 天地通主域名或主IP
+                   //----------------------------	
+                   
+					memset(reg_in,0,sizeof(reg_in)); 
+					memcpy(reg_in,Content,infolen);
+				
+				   //--------------------------------------------------------- 				   
+				   i =str2ip((char*)reg_in, IP_reg); 
+				   if (i <= 3)
+				   {
+					rt_kprintf("\r\n  天地通主域名: %s \r\n",reg_in); 
+					
+					memset(TDT_MainDnsStr,0,sizeof(TDT_MainDnsStr));						
+					memset(SysConf_struct.DNSR_TDT,0,sizeof(TDT_MainDnsStr));
+					memcpy(TDT_MainDnsStr,(char*)Content,infolen);	
+					memcpy(SysConf_struct.DNSR_TDT,(char*)Content,infolen);   
+
+					dnsr_set(3,TDT_MainDnsStr);						   
+					SD_ACKflag.f_CentreCMDack_0001H=1 ;// 2 DataLink_EndFlag=1; //AT_End(); 先返回结果再挂断  
+					break;
+				   }
+	
+	              break;
+	 case 0xF405:  //  天地通 TCP 端口 
+                     if(infolen!=4)
+						break;	
+					  resualtu32=(Content[0]<<24)+(Content[1]<<16)+(Content[2]<<8) +Content[3];
+					  port_tdt(resualtu32); 
+				      rt_kprintf("\r\n 天地通服务器 TCP 端口:%d\r\n",RemotePort_tdt);
+	              break;
+	 case 0xF406:  //  天地通 UDP 端口
+                      if(infolen!=4)
+						break;	
+					  resualtu32=(Content[0]<<24)+(Content[1]<<16)+(Content[2]<<8) +Content[3];
+				      rt_kprintf("\r\n 天地通主服务器 UDP 端口 :%d\r\n",resualtu32);
+	              break;
+     case 0xF407:  //   天地通备用 域名或IP
+                    memset(reg_in,0,sizeof(reg_in)); 
+					memcpy(reg_in,Content,infolen);
+				
+				   //--------------------------------------------------------- 				   
+				   i =str2ip((char*)reg_in, IP_reg); 
+				   if (i <= 3)
+				   {
+					rt_kprintf("\r\n  天地通备用域名: %s \r\n",reg_in); 
+					
+					memset(TDT_AuxDnsStr,0,sizeof(TDT_AuxDnsStr));						
+					memset(SysConf_struct.DNSR_TDT_Aux,0,sizeof(TDT_AuxDnsStr));
+					memcpy(TDT_AuxDnsStr,(char*)Content,infolen);	
+					memcpy(SysConf_struct.DNSR_TDT_Aux,(char*)Content,infolen);     
+
+					dnsr_set(4,TDT_AuxDnsStr);  						   
+					break;
+				   }
+	              break;
+     case 0xF408:  // 设置连接模式---天地通Aadd
+	 	           if(infolen!=4)
+						break;
 	 	           resualtu32=(Content[0]<<24)+(Content[1]<<16)+(Content[2]<<8) +Content[3];
-				   rt_kprintf("\r\n信息长度=%d,通讯方式=%d(0:标准模式1:货运模式)\r\n",infolen,resualtu32);
+				   rt_kprintf("\r\n信息长度=%d,通讯方式=%d(0:二客一危模式1:货运模式)\r\n",infolen,resualtu32);
 	               if(resualtu32==0)//标准模式
 	            	  	{
 	            	  	Vechicle_Info.Vech_MODE_Mark=2; //标准模式
-	            	  	dnsr_main(TDT_MainDnsStr);////修改DNS后  清空鉴权码
-	            	  	dnsr_aux(TDT_AuxDnsStr);////修改DNS后  清空鉴权码
-						port_main("8201");
-						link_mode("0");	
-						idip("clear");	
-
-						memset((u8*)SysConf_struct.DNSR,0 ,sizeof(SysConf_struct.DNSR));
-						memcpy(SysConf_struct.DNSR,TDT_MainDnsStr,strlen(DomainNameStr));
-						memset((u8*)SysConf_struct.DNSR_Aux,0 ,sizeof(SysConf_struct.DNSR_Aux));
-						memcpy(SysConf_struct.DNSR_Aux,TDT_AuxDnsStr,strlen(DomainNameStr_aux));   
-						
-	            	  	rt_kprintf("\r\n GPRS 切换到  标准模式");
+	            	    link_mode("0");//DNS 优先
+							 //--------    清除鉴权码 -------------------
+					        idip("clear");		
+	            	  	    rt_kprintf("\r\n GPRS 切换到  二客一危模式");
+							
+							SD_ACKflag.f_CentreCMDack_0001H=1 ;// 2 DataLink_EndFlag=1; //AT_End(); 先返回结果再挂断  
 	            	  	}
 			        else if(resualtu32==1)//货运模式
 			          	{
-			          	Vechicle_Info.Vech_MODE_Mark=1;//货运模式
-			          	dnsr_main("jt1.gghypt.net");//修改DNS后  清空鉴权码
-			          	dnsr_aux("jt2.gghypt.net");//修改DNS后  清空鉴权码
-						port_main("7008");
-						link_mode("0");//DNS 优先
-						idip("clear");	
-
-						memset((u8*)SysConf_struct.DNSR,0 ,sizeof(SysConf_struct.DNSR));
-						memcpy(SysConf_struct.DNSR,DomainNameStr,strlen(DomainNameStr)); 
-						memset((u8*)SysConf_struct.DNSR_Aux,0 ,sizeof(SysConf_struct.DNSR_Aux));
-						memcpy(SysConf_struct.DNSR_Aux,DomainNameStr_aux,strlen(DomainNameStr_aux));   
-
-	                    rt_kprintf("\r\n GPRS 切换到  货运模式");
-			          	}
-					Api_Config_write(config,ID_CONF_SYS,(u8*)&SysConf_struct,sizeof(SysConf_struct)); 
-					if( Api_Config_read(config,ID_CONF_SYS,(u8*)&SysConf_struct,sizeof(SysConf_struct))==true)   //读取系统配置信息
-						{
-						//   域名
-						memset((u8*)DomainNameStr,0 ,sizeof(DomainNameStr));
-						memcpy((u8*)DomainNameStr,SysConf_struct.DNSR,strlen((const char*)SysConf_struct.DNSR)); 
-						//   域名aux
-						memset((u8*)DomainNameStr_aux,0 ,sizeof(DomainNameStr_aux));
-						memcpy((u8*)DomainNameStr_aux,SysConf_struct.DNSR_Aux,strlen((const char*)SysConf_struct.DNSR_Aux)); 
-						}
-				
+			          	     Vechicle_Info.Vech_MODE_Mark=1;//货运模式
+						     //--------    清除鉴权码 ------------------- 
+					         idip("clear");			
+							 rt_kprintf("\r\n GPRS 切换到  货运模式"); 
+							 SD_ACKflag.f_CentreCMDack_0001H=1 ;// 2 DataLink_EndFlag=1; //AT_End(); 先返回结果再挂断  
+			        	}
 					DF_WriteFlashSector(DF_Vehicle_Struct_offset,0,(u8*)&Vechicle_Info,sizeof(Vechicle_Info)); 
 					WatchDog_Feed();
 					DF_WriteFlashSector(DF_VehicleBAK_Struct_offset,0,(u8*)&Vechicle_Info,sizeof(Vechicle_Info)); 
@@ -6127,7 +6231,9 @@ u8  CentreSet_subService_8103H(u32 SubID, u8 infolen, u8 *Content )
 				    WatchDog_Feed();
 				    DF_ReadFlash(DF_VehicleBAK2_Struct_offset,0,(u8*)&Vechicle_info_BAK2,sizeof(Vechicle_info_BAK2)); 
 
+                    
                  	break;
+					
      case 0x0001:  // 终端心跳包发送间隔  单位:s
                     if(infolen!=4)
 						break;					
@@ -6194,10 +6300,10 @@ u8  CentreSet_subService_8103H(u32 SubID, u8 infolen, u8 *Content )
 					  memset(SysConf_struct.DNSR,0,sizeof(DomainNameStr));
 					  memcpy(DomainNameStr,(char*)Content,infolen);   
 					  memcpy(SysConf_struct.DNSR,(char*)Content,infolen);   
-					 Api_Config_write(config,ID_CONF_SYS,(u8*)&SysConf_struct,sizeof(SysConf_struct));
+					  Api_Config_write(config,ID_CONF_SYS,(u8*)&SysConf_struct,sizeof(SysConf_struct));
 
-                                     //----- 传给 GSM 模块------
-                                    DataLink_DNSR_Set(SysConf_struct.DNSR,1); 
+                      //----- 传给 GSM 模块------
+                      DataLink_DNSR_Set(SysConf_struct.DNSR,1); 
 
 									 
 					  SD_ACKflag.f_CentreCMDack_0001H=1 ;// 2 DataLink_EndFlag=1; //AT_End(); 先返回结果再挂断  
@@ -11312,10 +11418,11 @@ void  redial(void)
 }
 FINSH_FUNCTION_EXPORT(redial, redial); 
 
-void  port_main(u8 *instr)
-{
-   		   sscanf(instr, "%d", (u32*)&RemotePort_main);  
-		   rt_kprintf("\r\n设置主端口=%d!",RemotePort_main);
+void  port_main(u32 port)
+{    
+		   RemotePort_main=(u16)port;   
+		   //RemotePort_tdt=port_reg; 
+		   rt_kprintf("\r\n设置主端口=%d   tdt_port=%d ",RemotePort_main,RemotePort_tdt);
 		   SysConf_struct.Port_main=RemotePort_main;
 		   Api_Config_write(config,ID_CONF_SYS,(u8*)&SysConf_struct,sizeof(SysConf_struct));
 		   
@@ -11323,20 +11430,20 @@ void  port_main(u8 *instr)
 			DataLink_EndFlag=1; //AT_End();  
 
 }
-FINSH_FUNCTION_EXPORT(port_main, port_main); 
+FINSH_FUNCTION_EXPORT(port_main, port_main[value]); 
 
-void  port_aux(u8 *instr)
+void  port_tdt(u32 port)
 {
-   		   sscanf(instr, "%d", (u32*)&RemotePort_aux);  
-		   rt_kprintf("\r\n设置辅助端口=%d!",RemotePort_aux);
-		   SysConf_struct.Port_Aux=RemotePort_aux;
-		   Api_Config_write(config,ID_CONF_SYS,(u8*)&SysConf_struct,sizeof(SysConf_struct));
+   		   RemotePort_tdt=(u16)port;   
+		   rt_kprintf("\r\n设置tdt端口=%d",RemotePort_tdt);
+		   SysConf_struct.Port_tdt=RemotePort_tdt;
+		   Api_Config_write(config,ID_CONF_SYS,(u8*)&SysConf_struct,sizeof(SysConf_struct)); 	   
 		   
-		   DataLink_AuxSocket_set(RemoteIP_main,RemotePort_aux,1);
+		 //  DataLink_AuxSocket_set(RemoteIP_main,RemotePort_aux,1); 
 		//	DataLink_EndFlag=1; //AT_End();  
 
 }
-//FINSH_FUNCTION_EXPORT(port_aux, port_aux); 
+FINSH_FUNCTION_EXPORT(port_tdt, port_tdt[value]); 
 
 
 void dnsr_main(u8*instr)

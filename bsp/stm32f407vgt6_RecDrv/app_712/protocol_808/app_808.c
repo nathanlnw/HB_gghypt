@@ -505,12 +505,10 @@ static void App808_thread_entry(void* parameter)
 		TIM3_Config();
        //  step 3:    usb host init	   	    	//  step  4:   TF card Init    
        //  	 spi_sd_init();	    
-          usbh_init();    
-          Init_ADC(); 
-		  
-		  
-		  CAN_struct_init();   
-		  
+          usbh_init(); 
+	   
+          Init_ADC();  		  
+		  CAN_struct_init();	  
         /* watch dog init */
 	    WatchDogInit();       
 

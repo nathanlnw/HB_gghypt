@@ -197,6 +197,7 @@ void   SMS_protocol (u8 *instr,u16 len, u8  ACKstate)   //  ACKstate
 	u16  cmdLen,u16Temp;
 	char *p_Instr;
 	char *pstrTemp,*pstrTempStart,*pstrTempEnd;
+	u8    Dnsr_str_reg[50];
 
 	//SYSID		///修改该值，保存flash
 	///应答短信包头部分
@@ -204,7 +205,7 @@ void   SMS_protocol (u8 *instr,u16 len, u8  ACKstate)   //  ACKstate
 	strcpy(SMS_Service.SMS_sd_Content,Vechicle_Info.Vech_Num);
 	strcat(SMS_Service.SMS_sd_Content,"#");// Debug
 	strcat(SMS_Service.SMS_sd_Content,SimID_12D);// Debug
-	strcat(SMS_Service.SMS_sd_Content,"#V3");// 版本信息 
+	strcat(SMS_Service.SMS_sd_Content,"#V4");// 版本信息 
 	/*************************处理信息****************************/
 	p_Instr=(char *)instr;
 	for(i=0;i<len;i++)
@@ -236,46 +237,19 @@ void   SMS_protocol (u8 *instr,u16 len, u8  ACKstate)   //  ACKstate
             	if(sms_content[0]=='0')//标准模式
             	  	{
             	  	Vechicle_Info.Vech_MODE_Mark=2; //标准模式
-            	  	dnsr_main(TDT_MainDnsStr);////修改DNS后  清空鉴权码
-            	  	dnsr_aux(TDT_AuxDnsStr);////修改DNS后  清空鉴权码
-					port_main("8201");
-					link_mode("0");	
-					idip("clear");	
-
-					memset((u8*)SysConf_struct.DNSR,0 ,sizeof(SysConf_struct.DNSR));
-					memcpy(SysConf_struct.DNSR,TDT_MainDnsStr,strlen(DomainNameStr));
-					memset((u8*)SysConf_struct.DNSR_Aux,0 ,sizeof(SysConf_struct.DNSR_Aux));
-					memcpy(SysConf_struct.DNSR_Aux,TDT_AuxDnsStr,strlen(DomainNameStr_aux));   
-					
-            	  	rt_kprintf("\r\n 切换到  标准模式");
+					idip("clear");	// 清除鉴权码
+					DEV_regist.Enable_sd=1; // set 发送注册标志位
+					DataLink_EndFlag=1; 
+            	  	rt_kprintf("\r\n 切换到  二客一危模式");
             	  	}
 		        else if(sms_content[0]=='1')//货运模式
 		          	{
 		          	Vechicle_Info.Vech_MODE_Mark=1;//货运模式
-		          	dnsr_main("jt1.gghypt.net");//修改DNS后  清空鉴权码
-		          	dnsr_aux("jt2.gghypt.net");//修改DNS后  清空鉴权码
-					port_main("7008");
-					link_mode("0");//DNS 优先
-					idip("clear");	
-
-					memset((u8*)SysConf_struct.DNSR,0 ,sizeof(SysConf_struct.DNSR));
-					memcpy(SysConf_struct.DNSR,DomainNameStr,strlen(DomainNameStr)); 
-					memset((u8*)SysConf_struct.DNSR_Aux,0 ,sizeof(SysConf_struct.DNSR_Aux));
-					memcpy(SysConf_struct.DNSR_Aux,DomainNameStr_aux,strlen(DomainNameStr_aux));   
-
+					idip("clear");	// 清除鉴权码
+					DEV_regist.Enable_sd=1; // set 发送注册标志位
+			        DataLink_EndFlag=1; 
                     rt_kprintf("\r\n 切换到  货运模式");
 		          	}
-				Api_Config_write(config,ID_CONF_SYS,(u8*)&SysConf_struct,sizeof(SysConf_struct)); 
-				if( Api_Config_read(config,ID_CONF_SYS,(u8*)&SysConf_struct,sizeof(SysConf_struct))==true)   //读取系统配置信息
-					{
-					//   域名
-					memset((u8*)DomainNameStr,0 ,sizeof(DomainNameStr));
-					memcpy((u8*)DomainNameStr,SysConf_struct.DNSR,strlen((const char*)SysConf_struct.DNSR)); 
-					//   域名aux
-					memset((u8*)DomainNameStr_aux,0 ,sizeof(DomainNameStr_aux));
-					memcpy((u8*)DomainNameStr_aux,SysConf_struct.DNSR_Aux,strlen((const char*)SysConf_struct.DNSR_Aux)); 
-					}
-				
 				DF_WriteFlashSector(DF_Vehicle_Struct_offset,0,(u8*)&Vechicle_Info,sizeof(Vechicle_Info)); 
 				WatchDog_Feed();
 				DF_WriteFlashSector(DF_VehicleBAK_Struct_offset,0,(u8*)&Vechicle_Info,sizeof(Vechicle_Info)); 
@@ -298,48 +272,48 @@ void   SMS_protocol (u8 *instr,u16 len, u8  ACKstate)   //  ACKstate
 				{
 				if(cmdLen<=sizeof(DomainNameStr))
 					{
-					if(pstrTemp[4]=='1')		///主域名
-						{
-						rt_kprintf("\r\n设置主域名 !");
-						memset(DomainNameStr,0,sizeof(DomainNameStr));					  
-						memset(SysConf_struct.DNSR,0,sizeof(DomainNameStr));  
-						memcpy(DomainNameStr,(char*)pstrTempStart,cmdLen);
-						memcpy(SysConf_struct.DNSR,(char*)pstrTempStart,cmdLen);
-						Api_Config_write(config,ID_CONF_SYS,(u8*)&SysConf_struct,sizeof(SysConf_struct));
-						//----- 传给 GSM 模块------
-						DataLink_DNSR_Set(SysConf_struct.DNSR,1); 
-						
-						///
-						Add_SMS_Ack_Content(sms_ack_data,ACKstate);
+					  switch(pstrTemp[4])		
+						{	
+						  case '1':		///主域名
+								rt_kprintf("\r\n设置主域名 !");
+								memset(Dnsr_str_reg,0,sizeof(Dnsr_str_reg));					  
+								memcpy(Dnsr_str_reg,(char*)pstrTempStart,cmdLen);  
+								dnsr_set(1,Dnsr_str_reg);
+								///
+								Add_SMS_Ack_Content(sms_ack_data,ACKstate);
 
-						//------- add on 2013-6-6
-						if(ACKstate==SMS_ACK_none)
-						     SD_ACKflag.f_CentreCMDack_0001H=2 ;//DataLink_EndFlag=1; //AT_End(); 先返回结果再挂断  
-						else
-							   DataLink_EndFlag=1; //AT_End();  
-							   
-                         //--------    清除鉴权码 -------------------
-					     idip("clear");		   
-
-						}
-					else if(pstrTemp[4]=='2')	///备用域名
-						{
-						rt_kprintf("\r\n设置备用域名 !");
-						memset(DomainNameStr_aux,0,sizeof(DomainNameStr_aux));					  
-						memset(SysConf_struct.DNSR_Aux,0,sizeof(DomainNameStr_aux));
-						memcpy(DomainNameStr_aux,(char*)pstrTempStart,cmdLen);
-						memcpy(SysConf_struct.DNSR_Aux,(char*)pstrTempStart,cmdLen);
-						Api_Config_write(config,ID_CONF_SYS,(u8*)&SysConf_struct,sizeof(SysConf_struct));
-						//----- 传给 GSM 模块------
-						DataLink_DNSR2_Set(SysConf_struct.DNSR_Aux,1);
-						
-						///
-						Add_SMS_Ack_Content(sms_ack_data,ACKstate);
-						}
-					else
-						{
-						continue;
-						}
+								//------- add on 2013-6-6
+								if(ACKstate==SMS_ACK_none)
+								     SD_ACKflag.f_CentreCMDack_0001H=2 ;//DataLink_EndFlag=1; //AT_End(); 先返回结果再挂断  
+								else
+                                if(Vechicle_Info.Vech_MODE_Mark==1)  // 货运模式下挂断链接，非货运就不用了
+								  DataLink_EndFlag=1; //AT_End();  
+									   
+		                         //--------    清除鉴权码 -------------------
+							     idip("clear");		   
+                                 break;
+						 case '2':	///备用域名
+							    memset(Dnsr_str_reg,0,sizeof(Dnsr_str_reg));					  
+								memcpy(Dnsr_str_reg,(char*)pstrTempStart,cmdLen);  
+								dnsr_set(2,Dnsr_str_reg);
+								///
+								Add_SMS_Ack_Content(sms_ack_data,ACKstate);
+								 break;
+					     case '3':	///天地通 1
+							    memset(Dnsr_str_reg,0,sizeof(Dnsr_str_reg));					  
+								memcpy(Dnsr_str_reg,(char*)pstrTempStart,cmdLen);  
+								dnsr_set(3,Dnsr_str_reg);
+								///
+								Add_SMS_Ack_Content(sms_ack_data,ACKstate);
+								 break;
+					     case '4':	///天地通2
+							    memset(Dnsr_str_reg,0,sizeof(Dnsr_str_reg));					  
+								memcpy(Dnsr_str_reg,(char*)pstrTempStart,cmdLen);  
+								dnsr_set(4,Dnsr_str_reg);
+								///
+								Add_SMS_Ack_Content(sms_ack_data,ACKstate);
+								 break;		 
+					  	}
 					}
 				}
 			else if(strncmp(pstrTemp,"PORT",4)==0)			///2. 设置端口
@@ -350,11 +324,7 @@ void   SMS_protocol (u8 *instr,u16 len, u8  ACKstate)   //  ACKstate
 					if(pstrTemp[4]=='1')		///主端口
 						{
 						rt_kprintf("\r\n设置主端口=%d!",u16Temp);
-						RemotePort_main=u16Temp;
-						SysConf_struct.Port_main=u16Temp;
-						Api_Config_write(config,ID_CONF_SYS,(u8*)&SysConf_struct,sizeof(SysConf_struct));
-						//----- 传给 GSM 模块------
-						DataLink_MainSocket_set(RemoteIP_main,RemotePort_main,1);
+						port_main(u16Temp); 
 						///
 						Add_SMS_Ack_Content(sms_ack_data,ACKstate);
 
@@ -366,7 +336,7 @@ void   SMS_protocol (u8 *instr,u16 len, u8  ACKstate)   //  ACKstate
 
 						 //--------    清除鉴权码 -------------------
 					     idip("clear");		   	  
-
+                        
 						}
 					else if(pstrTemp[4]=='2')	///备用端口
 						{
@@ -378,6 +348,15 @@ void   SMS_protocol (u8 *instr,u16 len, u8  ACKstate)   //  ACKstate
 						DataLink_AuxSocket_set(RemoteIP_aux,RemotePort_aux,1);
 						///
 						Add_SMS_Ack_Content(sms_ack_data,ACKstate);
+						}
+					else if(pstrTemp[4]=='3')	///天地通端口
+						{
+							rt_kprintf("\r\n设置天地通端口=%d!",u16Temp);
+							port_tdt(u16Temp);
+							Add_SMS_Ack_Content(sms_ack_data,ACKstate);
+							
+							if(Vechicle_Info.Vech_MODE_Mark==2)  // 普通模式下挂断链接，非货运就不用了
+							  DataLink_EndFlag=1;  
 						}
 					else
 						{
